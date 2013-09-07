@@ -1,4 +1,4 @@
 ProtoML-persist
 ===============
 
-The persistance implementations for ProtoML.
+The persistence implementations for ProtoML.
