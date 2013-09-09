@@ -1,40 +1,75 @@
 package persist
 
 import (
+	"crypto/md5"
+	"encoding/json"
+	"fmt"
+	"github.com/ProtoML/ProtoML/types"
 	"io"
-	"github.com/ProtoML/ProtoML/parsers"
+	"io/ioutil"
+	"os"
 )
 
-type PersistCreator interface {
-	CreateDirectory(dir string) (err error)
-	CreateFile(dir, filename string) (err error)
-}
-
-type PersistDeleter interface {
-	DeleteDirectory(dir string) (err error)
-	DeleteFile(dir, filename string) (err error)
-}
-
-type PersistLoader interface {
-	Load(dir, filename string) (data io.Reader, err error)
-}
-
-type PersistStorer interface {
-	Store(dir, filename string, data io.Reader) (err error)
-}
-
-type PersistLister interface {
-	ListDirectories() (list []string, err error)
-	ListFiles(dir string) (list []string, err error)
-}
-
 type PersistStorage interface {
-	Init(config parsers.Config) (err error)
-	Close() (err error)
-	PersistCreator
-	PersistDeleter
-	PersistLoader
-	PersistStorer
-	PersistLister
+	// Initialize file structure
+	Init(config Config) error
+	// check if transform has been computed
+	IsDone(transformId string) bool
+	// runs the transform
+	Run(types.RunRequest) error
+	// returns the filename of database data for a transform
+	TransformData(transformName string) (string, error)
+	// returns the filename of database data for the graph
+	GraphStructure() (string, error)
+	// load transform from transform json
+	LoadTransform(transformName string) (types.Transform, error)
+	// find data json and load
+	LoadData(dataId string) (types.Data, error)
 }
 
+type Config struct {
+	RootDir        string
+	TrainNamespace string
+}
+
+const (
+	CONFIG_FILE = "ProtoML_config.json"
+)
+
+func loadBlob(filename string) (blob []byte, err error) {
+	fileReader, err := os.Open(filename)
+	if err != nil {
+		return
+	}
+	blob, err = ioutil.ReadAll(fileReader)
+	fileReader.Close()
+	return
+}
+
+func LoadConfig() (config Config, err error) {
+	jsonBlob, err := loadBlob(CONFIG_FILE)
+	if err != nil {
+		return
+	}
+	err = json.Unmarshal(jsonBlob, &config)
+	return
+}
+
+func Hash(anything ...interface{}) string {
+	// returns the md5 hash of anything that can be printed as a string
+	h := md5.New()
+	io.WriteString(h, fmt.Sprint(anything...))
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func TransformId(runRequest types.RunRequest) string {
+	return Hash(runRequest)
+}
+
+func DataId(transformId string, index uint) string {
+	return fmt.Sprintf("%s-%d", transformId, index)
+}
+
+func ModelName(transformId string) string {
+	return transformId + ".model"
+}
