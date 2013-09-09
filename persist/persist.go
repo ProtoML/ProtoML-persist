@@ -1,46 +1,40 @@
 package persist
 
-/*
-   Parser for configuration files.
-*/
-
 import (
-	"encoding/json"
-	"fmt"
-	"github.com/ProtoML/ProtoML-core/utils"
-	"os"
-	"path"
+	"io"
+	"github.com/ProtoML/ProtoML/parsers"
 )
 
-var PROTOMLPATH string
-
-func init() {
-	PROTOMLPATH = os.Getenv("PROTOMLPATH")
-	if PROTOMLPATH == "" {
-		PROTOMLPATH = "."
-	}
+type PersistCreator interface {
+	CreateDirectory(dir string) (err error)
+	CreateFile(dir, filename string) (err error)
 }
 
-func ConfigValue(key string) interface{} {
-	config := make(map[string]interface{})
-	utils.HandleError(JsonDecoder(PROTOMLPATH, "config").Decode(&config))
-	return config[key]
+type PersistDeleter interface {
+	DeleteDirectory(dir string) (err error)
+	DeleteFile(dir, filename string) (err error)
 }
 
-func StringConfig(key string) string {
-	val, ok := ConfigValue(key).(string)
-	utils.Assert(ok, fmt.Sprintf("Cannot convert %s to string.\n", key))
-	return val
+type PersistLoader interface {
+	Load(dir, filename string) (data io.Reader, err error)
 }
 
-func JsonDecoder(folder string, filename string) *json.Decoder {
-	full_path := path.Join(folder, filename+".json")
-	file, err := os.OpenFile(full_path, os.O_RDONLY, 0644)
-	utils.HandleError(err)
-	return json.NewDecoder(file)
+type PersistStorer interface {
+	Store(dir, filename string, data io.Reader) (err error)
 }
 
-// type Persister interface { // TODO fix?
-// 	DataPath(id string, index uint64) string // path for output data
-// 	LoadTransform(id string) Transformer
-// }
+type PersistLister interface {
+	ListDirectories() (list []string, err error)
+	ListFiles(dir string) (list []string, err error)
+}
+
+type PersistStorage interface {
+	Init(config parsers.Config) (err error)
+	Close() (err error)
+	PersistCreator
+	PersistDeleter
+	PersistLoader
+	PersistStorer
+	PersistLister
+}
+
