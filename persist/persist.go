@@ -11,7 +11,7 @@ import (
 )
 
 type PersistStorage interface {
-	// Initialize file structure
+	// Initialize file structure / databases
 	Init(config Config) error
 	// check if transform has been computed
 	IsDone(transformId string) bool
@@ -21,6 +21,8 @@ type PersistStorage interface {
 	TransformData(transformName string) (string, error)
 	// returns the filename of database data for the graph
 	GraphStructure() (string, error)
+	// returns the filename of database data on available transforms
+	AvailableTransforms() (string, error)
 	// load transform from transform json
 	LoadTransform(transformName string) (types.Transform, error)
 	// find data json and load
@@ -63,6 +65,7 @@ func Hash(anything ...interface{}) string {
 }
 
 func TransformId(runRequest types.RunRequest) string {
+	// IMPLEMENTATION NOTE: this depends on the filename of the json, and assumes that the filename will be consistent based on the content of the json
 	return Hash(runRequest)
 }
 

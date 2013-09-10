@@ -1,11 +1,10 @@
 package local
 
 import (
-	"bufio"
-	"exec"
 	"github.com/ProtoML/ProtoML-persist/persist"
-	"io"
+	"github.com/ProtoML/ProtoML/types"
 	"os"
+	"os/exec"
 	"path"
 )
 
@@ -39,7 +38,7 @@ func touchFile(filepath string) (file *os.File, err error) {
 func relativeDirectoryPath(filename string) string {
 	// returns the relative directory of a file
 	hashed := persist.Hash(filename)
-	directories = make([]string, DIRECTORY_DEPTH)
+	directories := make([]string, DIRECTORY_DEPTH)
 	for x := 0; x < DIRECTORY_DEPTH; x++ {
 		directories[x] = hashed[HEX_CHARS_PER_DIRECTORY_LEVEL*x : HEX_CHARS_PER_DIRECTORY_LEVEL*(x+1)]
 	}
@@ -79,18 +78,18 @@ type LocalStorage struct {
 }
 
 func (store *LocalStorage) stateDirectory() string {
-	return path.Join(store.Config.RootDir, STATE_DIRECTORY)
+	return path.Join(store.Config.RootDir, BASE_STATE_DIRECTORY)
 }
 
 func (store *LocalStorage) fullDirectoryPath(filename string) string {
 	return path.Join(store.stateDirectory(), relativeDirectoryPath(filename))
 }
 
-func (store *LocalStorage) Init(config Config) (err error) {
+func (store *LocalStorage) Init(config persist.Config) (err error) {
 	store.Config = config
 
 	// check root and template directories exist
-	_, err = touchDir(store.Config.RootDir)
+	err = touchDir(store.Config.RootDir)
 	if err != nil {
 		return
 	}
@@ -102,6 +101,8 @@ func (store *LocalStorage) Init(config Config) (err error) {
 	}
 
 	// will not create nested directory structure, since it can be created lazily on the fly
+
+	// TODO add transforms to DB
 	return
 }
 
@@ -111,7 +112,7 @@ func (store *LocalStorage) IsDone(transformId string) bool {
 	if err != nil {
 		return false
 	}
-	transformModel = persist.ModelName(transformId)
+	transformModel := persist.ModelName(transformId)
 	for _, file := range files {
 		if file == transformModel {
 			return true
@@ -123,7 +124,7 @@ func (store *LocalStorage) IsDone(transformId string) bool {
 func (store *LocalStorage) Run(runRequest types.RunRequest) (err error) {
 	// TODO store data in database: time, sum of input size, input rows, input formats, exact call, parents to update graph structure
 	transformId := persist.TransformId(runRequest)
-	fullDirectoryPath := fullDirectoryPath(transformId)
+	fullDirectoryPath := store.fullDirectoryPath(transformId)
 	err = os.MkdirAll(fullDirectoryPath, 0666)
 	if err != nil {
 		return err
@@ -159,6 +160,11 @@ func (store *LocalStorage) GraphStructure() (path string, err error) {
 	return
 }
 
+func (store *LocalStorage) AvailableTransforms() (path string, err error) {
+	// TODO database write to csv
+	return
+
+}
 func (store *LocalStorage) LoadTransform(transformName string) (transform types.Transform, err error) {
 	// TODO parse transform json into a types.Transform
 	return
