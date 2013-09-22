@@ -102,6 +102,8 @@ func (store *LocalStorage) Init(config persist.Config) (err error) {
 
 	// will not create nested directory structure, since it can be created lazily on the fly
 
+	// TODO create sym link from the input data to the appropriate folder
+
 	// TODO add transforms to DB
 	return
 }
