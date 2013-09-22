@@ -32,6 +32,7 @@ type PersistStorage interface {
 type Config struct {
 	RootDir        string
 	TrainNamespace string
+	InputFiles     []types.Data
 }
 
 const (
