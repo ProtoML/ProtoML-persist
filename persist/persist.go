@@ -1,9 +1,7 @@
 package persist
 
 import (
-	"encoding/json"
 	"github.com/ProtoML/ProtoML/types"
-	"github.com/ProtoML/ProtoML/utils/osutils"
 	"github.com/ProtoML/ProtoML/formatadaptor"
 	"github.com/ProtoML/ProtoML-persist/persist/elastic"
 )
@@ -53,15 +51,6 @@ type PersistStorage interface {
 	//AddTransformFile(transformFile string) (types.Transform, error)
 	// insert data file into persist
 	AddDataFile(dataFile types.DatasetFile) (dataID []string, err error)
-}
-
-func LoadConfig(configFile string) (config Config, err error) {
-	jsonBlob, err := osutils.LoadBlob(configFile)
-	if err != nil {
-		return
-	}
-	err = json.Unmarshal(jsonBlob, &config)
-	return
 }
 
 func AddDataTypes(datatypes []types.DataType) (err error) {

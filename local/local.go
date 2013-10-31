@@ -293,6 +293,14 @@ func (store *LocalStorage) AddTransformFile(transformFile string) (transform typ
 	return
 }
 
+// reprents the physical data columns of each datagroup
+type dataGroupParts struct {
+	ParentGroupId string
+	ColPaths []string
+}
+const DATAGROUPPARTS_TYPE = "dataparts"
+
+
 // insert data file into persist
 func (store *LocalStorage) AddDataFile(dataFile types.DatasetFile) (dataID []string, err error) {
 	logger.LogDebug(LOGTAG, "Adding dataset file %s", dataFile.Path)
@@ -311,24 +319,60 @@ func (store *LocalStorage) AddDataFile(dataFile types.DatasetFile) (dataID []str
 	}
 
 	// split dataset into data groups, column files, and array index map from file to data group
-	dataGroups, _, _, err := store.FormatCollection.Split(dataFile, keyPath)
+	dataGroups, colPaths, groupToCols, err := store.FormatCollection.Split(dataFile, keyPath)
 	if err != nil {
 		return
 	}
-	
-	dataGroupId := make([]string,len(dataGroups))
-	/*for i, dataGroup := range dataGroups {
-		//response, err := core.Index(true,PROTOML_INDEX,DATAGROUP_TYPE, "", dataGroup)	
+	 
+	// add data groups into elasticsearch
+	dataID = make([]string,len(dataGroups))
+	for i, dataGroup := range dataGroups {
+		id, err := elastic.AddDataGroup(dataGroup)
 		if err != nil {
 			return []string{}, err
 		}
-		//dataGroupId[i] = response.Id
-	}*/
-	
-	logger.LogDebug(LOGTAG, "Result Data Ids:")
-	for _, id := range dataGroupId {
-		logger.LogDebug(LOGTAG, "%s",id)
+		dataID[i] = id
 	}
+
+	// setup data group dirs
+	dataDirs := make([]string,len(dataGroups))
+	logger.LogDebug(LOGTAG, "Result Data Ids:")
+	for i, id := range dataID {
+		logger.LogDebug(LOGTAG, "\t%s",id)
+		dataDirs[i] = store.getKeyPath(DataKey(id))
+		err = osutils.TouchDir(dataDirs[i])
+		if err != nil {
+			return
+		}
+	}
+
 	
-	return
+	// construct dataparts
+	dataParts := make([]dataGroupParts, len(dataGroups))
+	for i, dataGroup := range dataGroups {
+		id := dataID[i]  
+		colGroupPaths := make([]string,len(groupToCols[i]))
+		// move group cols into group dir
+		for gi, ci := range groupToCols[i] {
+			colPath := colPaths[ci]
+			colGroupPaths[gi] = path.Join(dataDirs[i], fmt.Sprintf("%010d.%s",gi,dataGroup.FileFormat))
+			err = os.Rename(colPath, colGroupPaths[i])
+			if err != nil {
+				return dataID, err
+			}
+		}
+		dataParts[i] = dataGroupParts{id,colGroupPaths}
+	}
+
+	// add data parts into elastic
+	logger.LogDebug(LOGTAG,"Separated DataPart Ids:")
+	for _, datapart := range dataParts {
+		id, err := elastic.ElasticAdd(DATAGROUPPARTS_TYPE, datapart)
+		if err != nil {
+			return dataID, err
+		}
+		logger.LogDebug(LOGTAG, "\t%s",id)
+	}
+
+	return dataID, nil
 }
