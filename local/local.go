@@ -1,43 +1,39 @@
 package local
 
 import (
+	"fmt"
 	"github.com/ProtoML/ProtoML-persist/persist"
 	"github.com/ProtoML/ProtoML/types"
+	"github.com/ProtoML/ProtoML/formatadaptor"
+	"github.com/ProtoML/ProtoML/logger"
+	//"github.com/ProtoML/ProtoML/types"
+	"github.com/ProtoML/ProtoML/utils/osutils"
+	//"github.com/mattbaird/elastigo/api"
+	//"github.com/mattbaird/elastigo/core"
 	"os"
 	"os/exec"
 	"path"
+	"errors"
+	"time"
+	"github.com/ProtoML/ProtoML-persist/persist/elastic"
 )
 
 const (
+	LOGTAG                        = "Persist-Local"
 	BASE_STATE_DIRECTORY          = ".ProtoML"
-	DB_NAME                       = "ProtoML.db"
-	DIRECTORY_DEPTH               = 5
-	HEX_CHARS_PER_DIRECTORY_LEVEL = 2
+	ELASTIC_DIRECTORY             = "elasticsearch"
+	TRANSFORM_DATA_FILE           = "TransformData.json"
+	GRAPH_STRUCTURE_FILE          = "GraphStructure.json"
+	AVAIABLE_TRANSFORMS_FILE      = "AvaiableTransforms.json"
+	AVAIABLE_DATATYPES_FILE       = "AvaiableDataTypes.json"
+	DIRECTORY_DEPTH               = 4
+	HEX_CHARS_PER_DIRECTORY_LEVEL = 4
 )
-
-func touchDir(dir string) (err error) {
-	err = os.Mkdir(dir, os.ModePerm)
-	if err != nil && !os.IsExist(err) {
-		return
-	} else {
-		err = nil
-		return
-	}
-}
-
-func touchFile(filepath string) (file *os.File, err error) {
-	file, err = os.Create(filepath)
-	if err != nil && !os.IsExist(err) {
-		return
-	} else {
-		err = nil
-		return
-	}
-}
-
-func relativeDirectoryPath(filename string) string {
-	// returns the relative directory of a file
-	hashed := persist.Hash(filename)
+ 
+// key value storage
+func keyPath(key string) string {
+	// returns the relative directory of a key
+	hashed := osutils.MD5Hash(key)
 	directories := make([]string, DIRECTORY_DEPTH)
 	for x := 0; x < DIRECTORY_DEPTH; x++ {
 		directories[x] = hashed[HEX_CHARS_PER_DIRECTORY_LEVEL*x : HEX_CHARS_PER_DIRECTORY_LEVEL*(x+1)]
@@ -45,88 +41,191 @@ func relativeDirectoryPath(filename string) string {
 	return path.Join(directories...)
 }
 
-func exists(fullPath string) bool {
-	// checks if a file exists
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-		return false
-	} else {
-		return true
-	}
+func keyValuePath(key, filename string) (err string) {
+	return path.Join(keyPath(key), filename)
 }
 
-func listFiles(directory string) (list []string, err error) {
-	directoryFileDescriptor, err := os.Open(directory)
-	if err != nil {
-		return
-	}
-	defer directoryFileDescriptor.Close()
+//  keys
+func DatasetFileKey(dataset types.DatasetFile) string {
+	return osutils.MD5Hash(fmt.Sprintf("%v",dataset))
+}
 
-	files, err := directoryFileDescriptor.Readdir(0)
-	list = make([]string, len(files))
-	listIter := 0
-	for _, file := range files {
-		if !file.IsDir() {
-			list[listIter] = file.Name()
-			listIter++
-		}
-	}
-	return
+
+func DataKey(dataid string) string {
+	return dataid + ".data"
+}
+
+func TransformInputKey(transformid string) string {
+	return transformid + ".transform.input"
+}
+
+func TransformRunKey(transformid string) string {
+	return transformid + ".transform.run"
+}
+
+func TransformOutputKey(transformid string) string {
+	return transformid + ".transform.output"
+}
+
+func StateKey(stateid string) string {
+	return stateid + ".state"
+}
+
+type DataFile struct {
+	DataId string
+	Path string
 }
 
 type LocalStorage struct {
-	Config persist.Config
+	Config           persist.Config
+	ElasticProcess   *exec.Cmd
+	FormatCollection *formatadaptor.FileFormatCollection
 }
 
+// key value storage
 func (store *LocalStorage) stateDirectory() string {
-	return path.Join(store.Config.RootDir, BASE_STATE_DIRECTORY)
+	return path.Join(store.Config.LocalPersistStorage.RootDir, BASE_STATE_DIRECTORY)
 }
 
-func (store *LocalStorage) fullDirectoryPath(filename string) string {
-	return path.Join(store.stateDirectory(), relativeDirectoryPath(filename))
+func (store *LocalStorage) getKeyPath(key string) string {
+	return path.Join(store.stateDirectory(), keyPath(key))
 }
 
+func (store *LocalStorage) getFilePath(key, filename string) string {
+	return path.Join(store.stateDirectory(), keyValuePath(key, filename))
+}
+
+func (store *LocalStorage) absoluteStoragePath(spath string) string {
+	return path.Join(store.stateDirectory(), spath)
+}
+ 
 func (store *LocalStorage) Init(config persist.Config) (err error) {
-	store.Config = config
+	logger.LogInfo(LOGTAG, "Initilizing Persistance Storage")
+	store.Config.LocalPersistStorage = config.LocalPersistStorage
+	logger.LogDebug(LOGTAG, "Initial Config: %#v", config)
+
+	if config.FormatCollection == nil {
+		err = errors.New("Nil format collection.")
+		logger.LogDebug(LOGTAG, fmt.Sprintf("%v", err))
+		return
+	}
+
+	store.FormatCollection = config.FormatCollection
+
+	// validate data directory
+	if !osutils.PathExists(store.Config.LocalPersistStorage.DatasetDirectory) {
+		err = errors.New(fmt.Sprintf("Cannot access dataset directory %s",store.Config.LocalPersistStorage.DatasetDirectory))
+		return
+	}
+
+	// run defaults
+	if store.Config.LocalPersistStorage.RootDir == "" {
+		store.Config.LocalPersistStorage.RootDir, err = os.Getwd()
+		if err != nil {
+			return
+		}
+	}
+	if store.Config.LocalPersistStorage.StateDir == "" {
+		store.Config.LocalPersistStorage.StateDir = BASE_STATE_DIRECTORY
+	}
 
 	// check root and template directories exist
-	err = touchDir(store.Config.RootDir)
+	err = osutils.TouchDir(store.Config.LocalPersistStorage.RootDir)
 	if err != nil {
 		return
 	}
 
 	// touch state directory
-	err = touchDir(store.stateDirectory())
+	err = osutils.TouchDir(store.stateDirectory())
 	if err != nil {
 		return
 	}
 
-	// will not create nested directory structure, since it can be created lazily on the fly
+	// touch elasticsearch directory
+	err = osutils.TouchDir(store.absoluteStoragePath(ELASTIC_DIRECTORY))
+	if err != nil {
+		return
+	}
 
-	// TODO create sym link from the input data to the appropriate folder
+	// start ElasticSearch
+	logger.LogInfo(LOGTAG, "Launching ElasticSearch")
+	elastic_cmd := "elasticsearch"
+/*	elastic_port := 9200
+	if store.Config.LocalPersistStorage.ElasticPort > 0 {
+		elastic_port = store.Config.LocalPersistStorage.ElasticPort
+	}*/
+	elastic_args := []string{
+		"-f",
+		fmt.Sprintf("-Des.path.data=\"%s\"", store.absoluteStoragePath(ELASTIC_DIRECTORY)),
+//		fmt.Sprintf("-Des.http.port=%d", elastic_port),
+	}
+//	api.Port = fmt.Sprintf("%d",elastic_port)
+	logger.LogDebug(LOGTAG, "Elasticsearch command: %s %v", elastic_cmd, elastic_args)
+	store.ElasticProcess = exec.Command(elastic_cmd, elastic_args...)
+	err = store.ElasticProcess.Start()
+	if err != nil {
+		return
+	}
+	// wait for ElasticSearch bounce
+	time.Sleep(time.Second*10)
 
-	// TODO add transforms to DB
+	// add default data types
+	logger.LogDebug(LOGTAG,"%s",types.DefaultDataTypes)
+	err = persist.AddDataTypes(types.DefaultDataTypes)
+	if err != nil {
+		return
+	}
+
+	// load input data files
+	for _, datasetFile := range config.LocalPersistStorage.InputFiles {	
+		// redirect path to dataset directory
+		datasetFile.Path = path.Join(store.Config.LocalPersistStorage.DatasetDirectory, datasetFile.Path)
+		// validate path exists
+		if !osutils.PathExists(datasetFile.Path) {
+			err = errors.New(fmt.Sprintf("Cannot find input file %s on path %s", path.Base(datasetFile.Path),datasetFile.Path))
+			return
+		}
+	}
+	
+	// load input data files
+	for _, datasetFile := range config.LocalPersistStorage.InputFiles {
+		// redirect path to dataset directory
+		datasetFile.Path = path.Join(store.Config.LocalPersistStorage.DatasetDirectory, datasetFile.Path)
+		_, err = store.AddDataFile(datasetFile)
+		if err != nil {
+			return
+		}
+	}
+	return
+}
+
+func (store *LocalStorage) Close() (err error) {
+	if store.ElasticProcess != nil {
+		logger.LogInfo(LOGTAG,"Closing persistance")
+		err = store.ElasticProcess.Process.Signal(os.Interrupt)
+		err = store.ElasticProcess.Wait()
+	}
 	return
 }
 
 func (store *LocalStorage) IsDone(transformId string) bool {
-	directory := store.fullDirectoryPath(transformId)
-	files, err := listFiles(directory)
-	if err != nil {
-		return false
-	}
-	transformModel := persist.ModelName(transformId)
-	for _, file := range files {
-		if file == transformModel {
-			return true
-		}
-	}
+	/*	directory := store.fullDirectoryPath(transformId)
+			files, err := listFiles(directory)
+			if err != nil {
+				return false
+			}
+			// search for state name
+		//	transformModel := persist.ModelName(transformId)
+			for _, file := range files {
+		//		if file == transformModel {
+		//			return true
+		//		}
+			}*/
 	return false
 }
 
-func (store *LocalStorage) Run(runRequest types.RunRequest) (err error) {
-	// TODO store data in database: time, sum of input size, input rows, input formats, exact call, parents to update graph structure
-	transformId := persist.TransformId(runRequest)
-	fullDirectoryPath := store.fullDirectoryPath(transformId)
+func (store *LocalStorage) Run(transformId string) (err error) {
+	fullDirectoryPath := store.getKeyPath(transformId)
 	err = os.MkdirAll(fullDirectoryPath, 0666)
 	if err != nil {
 		return err
@@ -152,27 +251,84 @@ func (store *LocalStorage) Run(runRequest types.RunRequest) (err error) {
 	return
 }
 
-func (store *LocalStorage) TransformData(transformName string) (path string, err error) {
-	// TODO database write to csv
+// execute entire pipeline
+func (store *LocalStorage) Execute() (err error) {
+
 	return
 }
 
-func (store *LocalStorage) GraphStructure() (path string, err error) {
-	// TODO database write to csv
+// get log file for transform
+func (store *LocalStorage) GetTransformLogFile(transformId string) (paths string, err error) {
+
 	return
 }
 
-func (store *LocalStorage) AvailableTransforms() (path string, err error) {
-	// TODO database write to csv
-	return
+// returns the filename of data for the graph
+func (store *LocalStorage) GraphStructureFile() (paths string, err error) {
 
-}
-func (store *LocalStorage) LoadTransform(transformName string) (transform types.Transform, err error) {
-	// TODO parse transform json into a types.Transform
 	return
 }
 
-func (store *LocalStorage) LoadData(dataId string) (data types.Data, err error) {
-	// TODO find data json and load into a types.Data
+// add transform into graph
+func (store *LocalStorage) AddGraphTransform(parentDataIDs []string, transformName string) (transformID string, err error) {
+
+	return
+}
+
+// update transform parameters in graph
+func (store *LocalStorage) UpdateGraphTransform(transformId string, parameters map[string]string) (err error) {
+
+	return
+}
+
+// delete transform from graph
+func (store *LocalStorage) RemoveGraphTransform(transformId string) (err error) {
+
+	return
+}
+
+// insert data on a tranform from a file
+func (store *LocalStorage) AddTransformFile(transformFile string) (transform types.Transform, err error) {
+
+	return
+}
+
+// insert data file into persist
+func (store *LocalStorage) AddDataFile(dataFile types.DatasetFile) (dataID []string, err error) {
+	logger.LogDebug(LOGTAG, "Adding dataset file %s", dataFile.Path)
+	// validate all dataset datatypes exist
+	for typename, _ := range dataFile.Columns.ExclusiveTypes {
+		if _, err := elastic.GetDataType(typename); err != nil {
+			return dataID, err
+		}
+	}
+	
+	// setup dataset dir
+	keyPath := store.getKeyPath(DatasetFileKey(dataFile))
+	err = osutils.TouchDir(keyPath)
+	if err != nil {
+		return
+	}
+
+	// split dataset into data groups, column files, and array index map from file to data group
+	dataGroups, _, _, err := store.FormatCollection.Split(dataFile, keyPath)
+	if err != nil {
+		return
+	}
+	
+	dataGroupId := make([]string,len(dataGroups))
+	/*for i, dataGroup := range dataGroups {
+		//response, err := core.Index(true,PROTOML_INDEX,DATAGROUP_TYPE, "", dataGroup)	
+		if err != nil {
+			return []string{}, err
+		}
+		//dataGroupId[i] = response.Id
+	}*/
+	
+	logger.LogDebug(LOGTAG, "Result Data Ids:")
+	for _, id := range dataGroupId {
+		logger.LogDebug(LOGTAG, "%s",id)
+	}
+	
 	return
 }
