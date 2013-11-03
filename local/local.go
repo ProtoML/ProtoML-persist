@@ -3,6 +3,7 @@ package local
 import (
 	"fmt"
 	"github.com/ProtoML/ProtoML-persist/persist"
+	"github.com/ProtoML/ProtoML-persist/persist/persistparsers"
 	"github.com/ProtoML/ProtoML/types"
 	"github.com/ProtoML/ProtoML/formatadaptor"
 	"github.com/ProtoML/ProtoML/logger"
@@ -16,16 +17,14 @@ import (
 	"errors"
 	"time"
 	"github.com/ProtoML/ProtoML-persist/persist/elastic"
+	"github.com/ProtoML/ProtoML/utils"
 )
 
 const (
 	LOGTAG                        = "Persist-Local"
 	BASE_STATE_DIRECTORY          = ".ProtoML"
 	ELASTIC_DIRECTORY             = "elasticsearch"
-	TRANSFORM_DATA_FILE           = "TransformData.json"
-	GRAPH_STRUCTURE_FILE          = "GraphStructure.json"
-	AVAIABLE_TRANSFORMS_FILE      = "AvaiableTransforms.json"
-	AVAIABLE_DATATYPES_FILE       = "AvaiableDataTypes.json"
+	PROTOML_TRANSFORMS_DIRECTORY  = "ProtoML-transforms/transforms"
 	DIRECTORY_DEPTH               = 4
 	HEX_CHARS_PER_DIRECTORY_LEVEL = 4
 )
@@ -176,6 +175,24 @@ func (store *LocalStorage) Init(config persist.Config) (err error) {
 		return
 	}
 
+	// add ProtoML transforms
+	logger.LogDebug(LOGTAG,"Adding ProtoML-transforms")
+	protomlDir, err := utils.ProtoMLDir()
+	if err != nil {
+		err = errors.New(fmt.Sprintf("%s: %v",err, "Cannot use enviromental variable PROTOMLDIR"))
+		return
+	}
+	transformFiles, err := persist.GetTransformFiles(path.Join(protomlDir,PROTOML_TRANSFORMS_DIRECTORY))
+	if len(transformFiles) == 0 {
+		logger.LogDebug(LOGTAG, "Could not find any ProtoML-transforms")
+	}
+	for _, transformFile := range transformFiles {
+		_, _, err = store.AddTransformFile(transformFile)
+		if err != nil {
+			return
+		}
+	}
+
 	// load input data files
 	for _, datasetFile := range config.LocalPersistStorage.InputFiles {	
 		// redirect path to dataset directory
@@ -196,12 +213,12 @@ func (store *LocalStorage) Init(config persist.Config) (err error) {
 			return
 		}
 	}
-	return
+	return 
 }
 
 func (store *LocalStorage) Close() (err error) {
+	logger.LogInfo(LOGTAG,"Closing persistance")
 	if store.ElasticProcess != nil {
-		logger.LogInfo(LOGTAG,"Closing persistance")
 		err = store.ElasticProcess.Process.Signal(os.Interrupt)
 		err = store.ElasticProcess.Wait()
 	}
@@ -287,9 +304,28 @@ func (store *LocalStorage) RemoveGraphTransform(transformId string) (err error) 
 	return
 }
 
-// insert data on a tranform from a file
-func (store *LocalStorage) AddTransformFile(transformFile string) (transform types.Transform, err error) {
+// load a transform from a file
+func (store *LocalStorage) AddTransformFile(transformFile string) (transform types.Transform, transformID string, err error) {
+	logger.LogDebug(LOGTAG, "Adding Transform at %s", transformFile)
+	jsonBlob, err := osutils.LoadBlob(transformFile)
+	if err != nil {
+		return
+	}
+	
+	// parse and validate transform
+	transform, err = persistparsers.ParseTransform(jsonBlob)
+	if err != nil {
+		return transform, "", errors.New(fmt.Sprintf("Parse Error In Transform %s: %s",transformFile, err))
+	}
+	transform.Template = transformFile
+	logger.LogDebug(LOGTAG, "\tTransform parsed")
 
+	// add transform into elastic search
+	transformID, err = elastic.AddTransform(transform)
+	if err != nil {
+		return
+	}
+	logger.LogDebug(LOGTAG, "Result Transform ID: %s", transformID)
 	return
 }
 

@@ -115,3 +115,9 @@ func AddDataGroup(datagroup types.DataGroup) (id string, err error) {
 	}
 	return ElasticAdd(DATAGROUP_TYPE, datagroup)
 }
+
+func AddTransform(transform types.Transform) (id string, err error) {
+	logger.LogDebug(LOGTAG,"Adding Transform %s from file %s", transform.Name, transform.Template)
+	// TODO validate input/output types exist
+	return ElasticAdd(TRANSFORM_TYPE, transform)
+}
