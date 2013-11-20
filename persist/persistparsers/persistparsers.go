@@ -5,76 +5,20 @@ import (
 	"errors"
 	"github.com/ProtoML/ProtoML/types"
 	"github.com/ProtoML/ProtoML/utils/osutils"
-	"path"
-	"strings"
+	"github.com/ProtoML/ProtoML-persist/persist"
 	"encoding/json"
-	"os"
-	"io/ioutil"
+	//"io/ioutil"
 	"github.com/ProtoML/ProtoML/types/constraintchecker"
 )
-
-
-
 
 const (
 	//LOGTAG = "PersistParser"
 )
-func ValidateTransformFunctions(template string, tf map[string]types.TransformFunction) (err error) {
-	for name, function := range(tf) {
-		if name == "" {
-			err = errors.New(fmt.Sprintf("Empty function name in template %s",template))
-		} else if function.Description == "" {
-			err = errors.New(fmt.Sprintf("No Description specified for function %s in template %s", name, template))
-		} else if function.Exec != "" {
-			_, err = os.Stat(function.Exec)
-			if err != nil {
-			err = errors.New(fmt.Sprintf("Could not stat execution context %s for function %s in template %s", function.Exec, name, template))
-			}
-		}
-	}
-	return err
-}
-
-func ValidateTransform(temp types.Transform) (err error) {
-
-	template := temp.Template
-	if template == "" {
-		err := errors.New(fmt.Sprintf("No template name: %#v", temp))
-	}	else if temp.PrimaryParameters == nil {
-		err := errors.New(fmt.Sprintf("No Primary Parameters specified in template %s", template))
-	} else if temp.PrimaryHyperParameters == nil {
-		err := errors.New(fmt.Sprintf("No Primary HyperParameters specified in template %s", template))
-	} else if temp.PrimaryExec == "" {
-		err := errors.New(fmt.Sprintf("No execution context specified in template %s", template))
-	} else if _, err := os.Stat(temp.PrimaryExec); err != nil {
-		err := errors.New(fmt.Sprintf("Could not stat execution context %s in template %s", temp.PrimaryExec, template))
-	} else if temp.Documentation == "" {
-		err := errors.New(fmt.Sprintf("No Documentation on the Transform in template %s", template))
-	} else if temp.PrimaryInputs == nil {
-		err := errors.New(fmt.Sprintf("No Primary Inputs specified in template %s", template))
-	} else if len(temp.PrimaryInputs) < 1 {
-		err := errors.New(fmt.Sprintf("Must have at least one input in template %s", template))
-	} else if temp.PrimaryOutputs == nil {
-		err := errors.New(fmt.Sprintf("No Primary Outputs specified in template %s", template))
-	} else if len(temp.PrimaryOutputs) < 1 {
-		err := errors.New(fmt.Sprintf("Must have at least one output in template %s", template))
-	} else if temp.PrimaryInputStates == nil {
-		err := errors.New(fmt.Sprintf("No Primary Input States specified in template %s", template))
-	} else if temp.PrimaryOutputStates == nil {
-		err := errors.New(fmt.Sprintf("No Primary Output States specified in template %s", template))
-	} else if temp.Functions == nil {
-		err := errors.New(fmt.Sprintf("No Functions specified in template %s", template))
-	} else if len(temp.Functions) < 1 {
-		err := errors.New(fmt.Sprintf("Must have at least one function in template %s", template))
-	}
-	err = ValidateTransformFunctions(template, temp.Functions)
-	return err
-}
 
 func ValidateParameterConstraints(ind map[string]types.InducedParameter, primary, function map[string]types.TransformParameter, template string) (err error) {
 	for param, val := range(ind) {
-		if constr, ok := function[param]; !ok {
-			if constr, ok := primary[param]; !ok {
+		if _, ok := function[param]; !ok {
+			if _, ok := primary[param]; !ok {
 				// Couldn't find the specified parameter in the primary or the function
 				err = errors.New(fmt.Sprintf("Induced Parameter %s not found in template %s", template))
 				break
@@ -89,8 +33,8 @@ func ValidateParameterConstraints(ind map[string]types.InducedParameter, primary
 
 func ValidateHyperParameterConstraints(ind map[string]types.InducedHyperParameter, primary, function map[string]types.TransformHyperParameter, template string) (err error) {
 	for param, val := range(ind) {
-		if constr, ok := function[param]; !ok {
-			if constr, ok := primary[param]; !ok {
+		if _, ok := function[param]; !ok {
+			if _, ok := primary[param]; !ok {
 				// Couldn't find the specified parameter in the primary or the function
 				err = errors.New(fmt.Sprintf("Induced Parameter %s not found in template %s", template))
 				break
@@ -105,8 +49,8 @@ func ValidateHyperParameterConstraints(ind map[string]types.InducedHyperParamete
 
 func ValidateFileConstraints(ind map[string]types.InducedFileParameter, primary, function map[string]types.FileParameter, template string) (err error) {
 	for param, val := range(ind) {
-		if constr, ok := function[param]; !ok {
-			if constr, ok := primary[param]; !ok {
+		if _, ok := function[param]; !ok {
+			if _, ok := primary[param]; !ok {
 				// Couldn't find the specified parameter in the primary or the function
 				err = errors.New(fmt.Sprintf("Induced Parameter %s not found in template %s", template))
 				break
@@ -121,8 +65,8 @@ func ValidateFileConstraints(ind map[string]types.InducedFileParameter, primary,
 
 func ValidateStateConstraints(ind map[string]types.InducedStateParameter, primary, function map[string]types.StateParameter, template string) (err error) {
 	for param, val := range(ind) {
-		if constr, ok := function[param]; !ok {
-			if constr, ok := primary[param]; !ok {
+		if _, ok := function[param]; !ok {
+			if _, ok := primary[param]; !ok {
 				// Couldn't find the specified parameter in the primary or the function
 				err = errors.New(fmt.Sprintf("Induced Parameter %s not found in template %s", template))
 				break
@@ -133,6 +77,45 @@ func ValidateStateConstraints(ind map[string]types.InducedStateParameter, primar
 		}
 	}
 	return err
+}
+
+func ValidateTransformFunctions(tf map[string]types.TransformFunction) (err error) {
+	for name, function := range(tf) {
+		if name == "" {
+			err = errors.New(fmt.Sprintf("Empty function name for function &#v",function))
+		} else if function.Description == "" {
+			err = errors.New(fmt.Sprintf("No Description for function %s", name))
+		} 
+		if err != nil {
+			return
+		}
+	}
+	return nil
+}
+
+func ValidateTransform(temp types.Transform) (err error) {
+	if temp.Name == "" {
+		err = errors.New("No transform name")
+	} else if len(temp.Documentation) > 0 {
+		err = errors.New("Template field is only to be filled by server")
+	} else if temp.Documentation == "" {
+		err = errors.New("No Documentation")
+	} else if temp.Functions == nil {
+		err = errors.New("No Functions")
+	} else if len(temp.Functions) < 1 {
+		err = errors.New("Must have at least one function in template")
+	}
+	err = ValidateTransformFunctions(temp.Functions)
+	return err
+}
+
+
+func ParseTransform(templateJSON []byte) (transform types.Transform, err error) {
+	err = json.Unmarshal(templateJSON, &transform)
+	if err != nil { return }
+
+	err = ValidateTransform(transform)
+	return
 }
 
 func ValidateInducedTransform(indt types.InducedTransform, against types.Transform) (err error) {
@@ -147,7 +130,36 @@ func ValidateInducedTransform(indt types.InducedTransform, against types.Transfo
 	}
 	return err
 }
-
+/*
+func ParseInducedTransform(indJSON []byte) (indtransform types.InducedTransform, err error) {
+	err = json.Unmarshal(indJSON, &indtransform)
+	if err != nil {
+		return
+	}
+	templateJSON, err := ioutil.ReadFile(indtransform.Template)
+	if err != nil {
+		return
+	}
+	temp, err := ParseTransformTemplate(templateJSON)
+	if err != nil {
+		return
+	}
+	err = ValidateInducedTransform(indtransform, temp)
+	return
+	
+}
+*/
+func LoadConfig(configFile string) (config persist.Config, err error) {
+	jsonBlob, err := osutils.LoadBlob(configFile)
+	if err != nil {
+		return
+	}
+	err = json.Unmarshal(jsonBlob, &config)
+	if err != nil {
+		
+	}
+	return
+}
 
 func ValidateDatasetFile(dataFile types.DatasetFile) (err error) {
 	// validation
@@ -157,8 +169,12 @@ func ValidateDatasetFile(dataFile types.DatasetFile) (err error) {
 		err = errors.New("No file format in datafile specification")
 	} else if dataFile.NRows == 0 {
 		err = errors.New("No rows size in datafile specification")
+	} else if dataFile.NRows < 0 {
+		err = errors.New("Negative rows size in datafile specification")
 	} else if dataFile.NCols == 0 {
 		err = errors.New("No columns size in datafile specification")
+	} else if dataFile.NCols < 0 {
+		err = errors.New("Negative columns size in datafile specification")
 	} else if len(dataFile.Columns.ExclusiveTypes) == 0 {
 		err = errors.New("No exclusive in datafile specification")
 	} else if len(dataFile.Columns.Tags) == 0 {
@@ -176,16 +192,16 @@ func ValidateDatasetFile(dataFile types.DatasetFile) (err error) {
 				err = errors.New(fmt.Sprintf("Type %s has an index below 0", etype))
 				return
 			} 
-			if index >= int(dataFile.NCols) {
+			if index >= dataFile.NCols {
 				err = errors.New(fmt.Sprintf("Type %s has an index not in range [0,number of cols)", etype))
 				return
 			}
 			sumColIndexes += index
 		}
 	}
-	if sumColIndexes > int((dataFile.NCols-1)*dataFile.NCols/2) {
+	if sumColIndexes > (dataFile.NCols-1)*dataFile.NCols/2 {
 		err = errors.New("Too many indices compared to datafile column size specification")
-	} else if sumColIndexes < int((dataFile.NCols-1)*dataFile.NCols/2) {
+	} else if sumColIndexes < (dataFile.NCols-1)*dataFile.NCols/2 {
 		err = errors.New("Not enough indices compared to datafile column size specification")
 	}
 	if err != nil {
@@ -199,7 +215,7 @@ func ValidateDatasetFile(dataFile types.DatasetFile) (err error) {
 				err = errors.New(fmt.Sprintf("Tag %s has an index below 0", tag))
 				return
 			} 
-			if index >= int(dataFile.NCols) {
+			if index >= dataFile.NCols {
 				err = errors.New(fmt.Sprintf("Tag %s has an index not in range [0,number of cols)", tag))
 				return
 			}
@@ -218,34 +234,13 @@ func ParseDatasetFile(jsonBlob []byte) (dataFile types.DatasetFile, err error) {
 	return
 }
 
-func ParseTransformTemplate(templateJSON []byte) (transform types.Transform, err error) {
-	err = json.Unmarshal(templateJSON, &transform)
-	if err != nil { return }
 
-	err = ValidateJSONTemplate(transform)
-	return
-}
 
-func ParseInducedTransform(indJSON []byte) (indtransform types.InducedTransform, err error) {
-	err = json.Unmarshal(indJSON, &indtransform)
-	if err != nil {
-		return
-	}
-	templateJSON, err := ioutil.ReadFile(indtransform.Template)
-	if err != nil {
-		return
-	}
-	temp, err := ParseTransformTemplate(templateJSON)
-	if err != nil {
-		return
-	}
-	err = ValidateInducedTransform(indtransform, temp)
-	return
-	
-}
-
+/*func ParseExternalTransforms(store PersistStorage, externalTransformDirectories []string) (transforms []types.Transform, err error) {
+=======
 // Doesn't build, no persist storage
 func ParseExternalTransforms(store PersistStorage, externalTransformDirectories []string) (transforms []types.Transform, err error) {
+>>>>>>> zmjjmz/master
 	transforms = make([]types.Transform, 0)
 	for _, transformDir := range externalTransformDirectories {
 		dir, err := os.Open(transformDir)
@@ -271,3 +266,4 @@ func ParseExternalTransforms(store PersistStorage, externalTransformDirectories 
 	}
 	return
 }
+*/

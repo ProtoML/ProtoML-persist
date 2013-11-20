@@ -1,11 +1,12 @@
 package persist
 
 import (
-	"encoding/json"
 	"github.com/ProtoML/ProtoML/types"
-	"github.com/ProtoML/ProtoML/utils/osutils"
 	"github.com/ProtoML/ProtoML/formatadaptor"
 	"github.com/ProtoML/ProtoML-persist/persist/elastic"
+	"strings"
+	"github.com/ProtoML/ProtoML/utils/osutils"
+	"path"
 )
 
 type LocalPersistStorageConfig struct {
@@ -50,18 +51,9 @@ type PersistStorage interface {
 	//RemoveGraphTransform(transformId string) (err error)
 
 	// insert data on a tranform from a file
-	//AddTransformFile(transformFile string) (types.Transform, error)
+	AddTransformFile(transformFile string) (transform types.Transform, transformID string, err error)
 	// insert data file into persist
 	AddDataFile(dataFile types.DatasetFile) (dataID []string, err error)
-}
-
-func LoadConfig(configFile string) (config Config, err error) {
-	jsonBlob, err := osutils.LoadBlob(configFile)
-	if err != nil {
-		return
-	}
-	err = json.Unmarshal(jsonBlob, &config)
-	return
 }
 
 func AddDataTypes(datatypes []types.DataType) (err error) {
@@ -74,3 +66,16 @@ func AddDataTypes(datatypes []types.DataType) (err error) {
 	return nil
 }
 
+func GetTransformFiles(transformDir string) (transformFiles []string, err error) {
+	dirFiles, err := osutils.ListFilesInDirectory(transformDir)
+	if err != nil {
+		return
+	}
+	transformFiles = make([]string, 0)
+	for _, file := range dirFiles {
+		if strings.HasSuffix(file,".json") {
+			transformFiles = append(transformFiles,path.Join(transformDir,file))
+		}
+	}
+	return 
+}
