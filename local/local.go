@@ -219,7 +219,7 @@ func (store *LocalStorage) Init(config persist.Config) (err error) {
 func (store *LocalStorage) Close() (err error) {
 	logger.LogInfo(LOGTAG,"Closing persistance")
 	if store.ElasticProcess != nil {
-		err = store.ElasticProcess.Process.Signal(os.Interrupt)
+		err = store.ElasticProcess.Process.Kill()
 		err = store.ElasticProcess.Wait()
 	}
 	return
@@ -280,33 +280,31 @@ func (store *LocalStorage) GetTransformLogFile(transformId string) (paths string
 	return
 }
 
-// returns the filename of data for the graph
-func (store *LocalStorage) GraphStructureFile() (paths string, err error) {
+// add induced transform
+func AddInducedTransform(itransform types.InducedTransform) (itransformID string, err error) {
+	logger.LogDebug(LOGTAG, "Adding Induced Transform named (%s) from transform id (%s)", itransform.Name, itransform.TemplateID)
+	
+	// parse and validate induced transform
+	err = persistparsers.ValidateInducedTransform(itransform)
+	if err != nil {
+		itransform.error = err
+	} else {
+		itransform = ""
+	}
 
+	// add induced transform into elastic search
+	itransformID, err = elastic.AddInducedTransform(itransform)
+	if err != nil {
+		return
+	}
+	logger.LogDebug(LOGTAG, "Result Induced Transform ID: %s", transformID)	
 	return
 }
-
-// add transform into graph
-func (store *LocalStorage) AddGraphTransform(parentDataIDs []string, transformName string) (transformID string, err error) {
-
-	return
-}
-
-// update transform parameters in graph
-func (store *LocalStorage) UpdateGraphTransform(transformId string, parameters map[string]string) (err error) {
-
-	return
-}
-
-// delete transform from graph
-func (store *LocalStorage) RemoveGraphTransform(transformId string) (err error) {
-
-	return
-}
+	
 
 // load a transform from a file
 func (store *LocalStorage) AddTransformFile(transformFile string) (transform types.Transform, transformID string, err error) {
-	logger.LogDebug(LOGTAG, "Adding Transform at %s", transformFile)
+	logger.LogDebug(LOGTAG, "Adding Transform from %s", transformFile)
 	jsonBlob, err := osutils.LoadBlob(transformFile)
 	if err != nil {
 		return
