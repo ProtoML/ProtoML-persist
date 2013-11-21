@@ -17,10 +17,11 @@ const (
 	DATAGROUP_TYPE                = "data"
 	DATAFILE_TYPE                 = "datafile"
 	TRANSFORM_TYPE                = "transform"
+	INDUCED_TRANSFORM_TYPE        = "itransform"
 	STATE_TYPE                    = "state"
 )
 
-func ElasticGetError(res core.SearchResult,  errormsg string) (err error) {
+func ElasticSearchError(res core.SearchResult, errormsg string) (err error) {
 	if res.TimedOut {
 		err = errors.New(fmt.Sprintf("elasticsearch Get for %s timed out",errormsg))
 		return
@@ -40,7 +41,7 @@ func ElasticIndex(elastictype string, data interface{}, eid string) (id string, 
 		return
 	}
 	if !resp.Ok {
-		err = errors.New(fmt.Sprintf("elastic Addtion of type %s failed", elastictype))
+		err = errors.New(fmt.Sprintf("elastic addtion of type %s failed", elastictype))
 	}
 	time.Sleep(time.Second) // sleep to allow for elasticsearch indexing
 	id = resp.Id
@@ -62,7 +63,7 @@ func GetDataType(name types.DataTypeName) (datatype types.DataType, err error) {
 	if err != nil {
 		return
 	}
-	err = ElasticGetError(res, fmt.Sprintf("datatype %s",name))
+	err = ElasticSearchError(res, fmt.Sprintf("datatype %s",name))
 	if err != nil {
 		return
 	}
@@ -115,7 +116,6 @@ func IsDataTypeAncestor(childType, ancestorType types.DataTypeName) (isParent bo
 	return false, nil
 }
 
-
 func AddDataGroup(datagroup types.DataGroup) (id string, err error) {
 	logger.LogDebug(LOGTAG,"Adding DataGroup of type %s with shape %d cols and %d rows", datagroup.Columns.ExclusiveType, datagroup.NCols, datagroup.NRows)
 	// validate column type exists
@@ -134,9 +134,51 @@ func UpdateDataGroup(eid string, datagroup types.DataGroup) (err error) {
 	return ElasticUpdate(DATAGROUP_TYPE, eid, datagroup)
 }
 
-
 func AddTransform(transform types.Transform) (id string, err error) {
 	logger.LogDebug(LOGTAG,"Adding Transform %s from file %s", transform.Name, transform.Template)
 	// TODO validate input/output types exist
 	return ElasticAdd(TRANSFORM_TYPE, transform)
+}
+
+func GetTransform(id string) (transform types.Transform, err error) {
+	// search 
+	res, err := core.Get(true, PROTOML_INDEX, TRANSFORM_TYPE, id)
+	if err != nil {
+		return
+	}
+	if !res.Ok {
+		err = errors.New(fmt.Sprintf("elastic get failed on induced transform id %s",id))
+		return
+	}
+	if !res.Found {
+		err = errors.New(fmt.Sprintf("Can't find induced transform id %s",id))
+		return
+	}
+
+	transform = res.Source.(types.Transform)
+	return
+}
+
+func AddInducedTransform(itransform types.InducedTransform) (id string, err error) {
+	logger.LogDebug(LOGTAG,"Adding Induced Transform %s from file %s", itransform.Name, itransform.Template)
+	return ElasticAdd(INDUCED_TRANSFORM_TYPE, itransform)
+}
+
+func GetInducedTransform(id string) (itransform types.InducedTransform, err error) {
+	// search 
+	res, err := core.Get(true, PROTOML_INDEX, TRANSFORM_TYPE, id)
+	if err != nil {
+		return
+	}
+	if !res.Ok {
+		err = errors.New(fmt.Sprintf("elastic get failed on induced transform id %s",id))
+		return
+	}
+	if !res.Found {
+		err = errors.New(fmt.Sprintf("Can't find induced transform id %s",id))
+		return
+	}
+
+	itransform = res.Source.(types.InducedTransform)
+	return
 }
