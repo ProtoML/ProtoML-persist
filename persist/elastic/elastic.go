@@ -33,9 +33,9 @@ func ElasticGetError(res core.SearchResult,  errormsg string) (err error) {
 }
 
 
-func ElasticAdd(elastictype string, data interface{}) (id string, err error) {
+func ElasticIndex(elastictype string, data interface{}, eid string) (id string, err error) {
 	// index
-	resp, err := core.Index(true, PROTOML_INDEX, elastictype, "", data)
+	resp, err := core.Index(true, PROTOML_INDEX, elastictype, eid, data)
 	if err != nil {
 		return
 	}
@@ -44,6 +44,15 @@ func ElasticAdd(elastictype string, data interface{}) (id string, err error) {
 	}
 	time.Sleep(time.Second) // sleep to allow for elasticsearch indexing
 	id = resp.Id
+	return
+}
+
+func ElasticAdd(elastictype string, data interface{}) (id string, err error) {
+	return ElasticIndex(elastictype, data, "")
+}
+
+func ElasticUpdate(elastictype string, elasticid string, data interface{}) (err error) { 
+	_, err = ElasticIndex(elastictype, data, elasticid)
 	return
 }
 
@@ -115,6 +124,16 @@ func AddDataGroup(datagroup types.DataGroup) (id string, err error) {
 	}
 	return ElasticAdd(DATAGROUP_TYPE, datagroup)
 }
+
+func UpdateDataGroup(eid string, datagroup types.DataGroup) (err error) {
+	logger.LogDebug(LOGTAG,"Updating DataGroup of type %s with shape %d cols and %d rows", datagroup.Columns.ExclusiveType, datagroup.NCols, datagroup.NRows)
+	// validate column type exists
+	if _, err := GetDataType(datagroup.Columns.ExclusiveType); err != nil {
+		return err
+	}
+	return ElasticUpdate(DATAGROUP_TYPE, eid, datagroup)
+}
+
 
 func AddTransform(transform types.Transform) (id string, err error) {
 	logger.LogDebug(LOGTAG,"Adding Transform %s from file %s", transform.Name, transform.Template)

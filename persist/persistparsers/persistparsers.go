@@ -118,8 +118,13 @@ func ParseTransform(templateJSON []byte) (transform types.Transform, err error) 
 	return
 }
 
-func ValidateInducedTransform(indt types.InducedTransform, against types.Transform) (err error) {
-	if with, ok := against.Functions[indt.Function]; !ok {
+/*
+func ValidateInducedTransform(indt types.InducedTransform) (err error) {
+    // use getTransform to get transform from template id else error
+	
+	if len(indt.Name) == 0 {
+		err = errors.New("No name in induced transform")
+	} else if with, ok := against.Functions[indt.Function]; !ok {
 		err = errors.New(fmt.Sprintf("Function not in template %s", against.Template))
 	} else if err = ValidateParameterConstraints(indt.Parameters, against.PrimaryParameters, with.Parameters, against.Template); err != nil {
 	} else if err = ValidateHyperParameterConstraints(indt.HyperParameters, against.PrimaryHyperParameters, with.HyperParameters, against.Template); err != nil {
@@ -129,7 +134,9 @@ func ValidateInducedTransform(indt types.InducedTransform, against types.Transfo
 	} else if err = ValidateStateConstraints(indt.OutputStates, against.PrimaryOutputStates, with.OutputStates, against.Template); err != nil {
 	}
 	return err
-}
+}	
+*/
+	
 /*
 func ParseInducedTransform(indJSON []byte) (indtransform types.InducedTransform, err error) {
 	err = json.Unmarshal(indJSON, &indtransform)

@@ -39,15 +39,11 @@ type PersistStorage interface {
 	// get log file for transform
 	//GetTransformLogFile(transformId string) (string, error)
 
-	// returns the filename of data for the graph
-	//GraphStructureFile() (string, error)
-	// add transform into graph
-	//AddGraphTransform(parentDataIDs []string, transformName string) (transformID string, err error)
-	// update transform parameters in graph
+	// add induced transform
+	AddInducedTransform(itransform types.InducedTransform) (itransformID string, err error)
+	// update induced transform
 	//UpdateGraphTransform(transformId string, parameters map[string]string) (err error)
-	// reset transform to defaults
-	//ResetGraphTransform(transformId string) (err error)
-	// delete transform from graph
+	// delete induced transform
 	//RemoveGraphTransform(transformId string) (err error)
 
 	// insert data on a tranform from a file
