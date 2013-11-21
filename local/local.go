@@ -7,7 +7,6 @@ import (
 	"github.com/ProtoML/ProtoML/types"
 	"github.com/ProtoML/ProtoML/formatadaptor"
 	"github.com/ProtoML/ProtoML/logger"
-	//"github.com/ProtoML/ProtoML/types"
 	"github.com/ProtoML/ProtoML/utils/osutils"
 	//"github.com/mattbaird/elastigo/api"
 	//"github.com/mattbaird/elastigo/core"
@@ -283,13 +282,13 @@ func (store *LocalStorage) GetTransformLogFile(transformId string) (paths string
 // add induced transform
 func AddInducedTransform(itransform types.InducedTransform) (itransformID string, err error) {
 	logger.LogDebug(LOGTAG, "Adding Induced Transform named (%s) from transform id (%s)", itransform.Name, itransform.TemplateID)
-	
+	// Get transform template
 	// parse and validate induced transform
 	err = persistparsers.ValidateInducedTransform(itransform)
 	if err != nil {
-		itransform.error = err
+		itransform.Error = fmt.Sprintf("%s",err)
 	} else {
-		itransform = ""
+		itransform.Error = ""
 	}
 
 	// add induced transform into elastic search
@@ -297,7 +296,7 @@ func AddInducedTransform(itransform types.InducedTransform) (itransformID string
 	if err != nil {
 		return
 	}
-	logger.LogDebug(LOGTAG, "Result Induced Transform ID: %s", transformID)	
+	logger.LogDebug(LOGTAG, "Result Induced Transform ID: %s", itransformID)	
 	return
 }
 	
