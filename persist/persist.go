@@ -40,7 +40,7 @@ type PersistStorage interface {
 	//GetTransformLogFile(transformId string) (string, error)
 
 	// add induced transform
-	AddInducedTransform(itransform types.InducedTransform) (itransformID string, err error)
+	//AddInducedTransform(itransform types.InducedTransform) (itransformID string, err error)
 	// update induced transform
 	//UpdateGraphTransform(transformId string, parameters map[string]string) (err error)
 	// delete induced transform

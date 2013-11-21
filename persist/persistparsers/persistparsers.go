@@ -6,8 +6,8 @@ import (
 	"github.com/ProtoML/ProtoML/types"
 	"github.com/ProtoML/ProtoML/utils/osutils"
 	"github.com/ProtoML/ProtoML-persist/persist"
+	"github.com/ProtoML/ProtoML-persist/persist/elastic"
 	"encoding/json"
-	//"io/ioutil"
 	"github.com/ProtoML/ProtoML/types/constraintchecker"
 )
 
@@ -41,6 +41,7 @@ func ValidateHyperParameterConstraints(ind map[string]types.InducedHyperParamete
 			} else {
 				err = constraintchecker.CheckHyper(ind, primary, function, primary[param], val)
 			}
+			// TODO: Handle optional parameters
 			err = constraintchecker.CheckHyper(ind, primary, function, function[param], val)
 		}
 	}
@@ -85,12 +86,12 @@ func ValidateTransformFunctions(tf map[string]types.TransformFunction) (err erro
 			err = errors.New(fmt.Sprintf("Empty function name for function &#v",function))
 		} else if function.Description == "" {
 			err = errors.New(fmt.Sprintf("No Description for function %s", name))
-		} 
+		}
 		if err != nil {
 			return
 		}
 	}
-	return nil
+	return
 }
 
 func ValidateTransform(temp types.Transform) (err error) {
@@ -113,15 +114,17 @@ func ValidateTransform(temp types.Transform) (err error) {
 func ParseTransform(templateJSON []byte) (transform types.Transform, err error) {
 	err = json.Unmarshal(templateJSON, &transform)
 	if err != nil { return }
-
 	err = ValidateTransform(transform)
 	return
 }
 
-/*
 func ValidateInducedTransform(indt types.InducedTransform) (err error) {
-    // use getTransform to get transform from template id else error
-	
+	// First, get the template transform from elastic
+	against, err := elastic.GetTransform(indt.TemplateID)
+	if err != nil {
+		err = errors.New(fmt.Sprintf("Invalid TemplateID %s", indt.TemplateID))
+		return
+	}
 	if len(indt.Name) == 0 {
 		err = errors.New("No name in induced transform")
 	} else if with, ok := against.Functions[indt.Function]; !ok {
@@ -133,29 +136,8 @@ func ValidateInducedTransform(indt types.InducedTransform) (err error) {
 	} else if err = ValidateStateConstraints(indt.InputStates, against.PrimaryInputStates, with.InputStates, against.Template); err != nil {
 	} else if err = ValidateStateConstraints(indt.OutputStates, against.PrimaryOutputStates, with.OutputStates, against.Template); err != nil {
 	}
-	return err
-}	
-*/
-	
-/*
-func ParseInducedTransform(indJSON []byte) (indtransform types.InducedTransform, err error) {
-	err = json.Unmarshal(indJSON, &indtransform)
-	if err != nil {
-		return
-	}
-	templateJSON, err := ioutil.ReadFile(indtransform.Template)
-	if err != nil {
-		return
-	}
-	temp, err := ParseTransformTemplate(templateJSON)
-	if err != nil {
-		return
-	}
-	err = ValidateInducedTransform(indtransform, temp)
 	return
-	
 }
-*/
 func LoadConfig(configFile string) (config persist.Config, err error) {
 	jsonBlob, err := osutils.LoadBlob(configFile)
 	if err != nil {
@@ -163,7 +145,7 @@ func LoadConfig(configFile string) (config persist.Config, err error) {
 	}
 	err = json.Unmarshal(jsonBlob, &config)
 	if err != nil {
-		
+		return
 	}
 	return
 }
