@@ -31,18 +31,18 @@ type PersistStorage interface {
 	Close() error
 
 	// check if transform has been computed
-	//IsDone(transformId string) bool
-	// runs the transform
-	//Run(transformId string) error
+	//IsDone(transformId string) (bool, error)
+	// runs the induced transform
+	Run(itransformId string) error
 	// execute entire pipeline
-	//Execute() error
+	Execute() error
 	// get log file for transform
 	//GetTransformLogFile(transformId string) (string, error)
 
 	// add induced transform
-	//AddInducedTransform(itransform types.InducedTransform) (itransformID string, err error)
+	AddInducedTransform(itransform types.InducedTransform) (itransformID string, err error)
 	// update induced transform
-	//UpdateGraphTransform(transformId string, parameters map[string]string) (err error)
+	UpdateInducedTransform(transformId string, itransform types.InducedTransform) (err error)
 	// delete induced transform
 	//RemoveGraphTransform(transformId string) (err error)
 

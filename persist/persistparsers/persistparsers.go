@@ -118,6 +118,13 @@ func ParseTransform(templateJSON []byte) (transform types.Transform, err error) 
 	return
 }
 
+func ParseInducedTransform(templateJSON []byte) (itransform types.InducedTransform, err error) {
+	err = json.Unmarshal(templateJSON, &itransform)
+	if err != nil { return }
+	err = ValidateInducedTransform(itransform)
+	return
+}
+
 func ValidateInducedTransform(indt types.InducedTransform) (err error) {
 	// First, get the template transform from elastic
 	against, err := elastic.GetTransform(indt.TemplateID)

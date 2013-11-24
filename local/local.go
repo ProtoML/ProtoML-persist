@@ -17,15 +17,19 @@ import (
 	"time"
 	"github.com/ProtoML/ProtoML-persist/persist/elastic"
 	"github.com/ProtoML/ProtoML/utils"
+	"encoding/json"
 )
 
 const (
-	LOGTAG                        = "Persist-Local"
-	BASE_STATE_DIRECTORY          = ".ProtoML"
-	ELASTIC_DIRECTORY             = "elasticsearch"
-	PROTOML_TRANSFORMS_DIRECTORY  = "ProtoML-transforms/transforms"
-	DIRECTORY_DEPTH               = 4
-	HEX_CHARS_PER_DIRECTORY_LEVEL = 4
+	LOGTAG							= "Persist-Local"
+	BASE_STATE_DIRECTORY			= ".ProtoML"
+	ELASTIC_DIRECTORY				= "elasticsearch"
+	PROTOML_TRANSFORMS_DIRECTORY	= "ProtoML-transforms/transforms"
+	DIRECTORY_DEPTH					= 4
+	HEX_CHARS_PER_DIRECTORY_LEVEL	= 4
+	LUIGI_TASK                      = "ProtoML-persist/local/fiber/TransformTask.py"
+	TASK_PARARMS_FILE               = "params"
+	TASK_LOG_FILE					= "log"
 )
  
 // key value storage
@@ -53,16 +57,12 @@ func DataKey(dataid string) string {
 	return dataid + ".data"
 }
 
-func TransformInputKey(transformid string) string {
-	return transformid + ".transform.input"
+func TransformKey(transformid string) string {
+	return transformid + ".transform"
 }
 
-func TransformRunKey(transformid string) string {
-	return transformid + ".transform.run"
-}
-
-func TransformOutputKey(transformid string) string {
-	return transformid + ".transform.output"
+func InducedTransformKey(itransformid string) string {
+	return itransformid + ".itransform"
 }
 
 func StateKey(stateid string) string {
@@ -74,9 +74,31 @@ type DataFile struct {
 	Path string
 }
 
+type TaskInsert struct {
+	TaskId string
+	TaskName string
+	Task *exec.Cmd
+}
+
+type TaskStatus struct {
+	TaskId string
+	TaskName string
+	MsgChan chan TaskStatusMsg
+}
+
+type TaskStatusMsg struct {
+	TaskId string
+	TaskName string
+	Finished bool
+	Error string
+}
+
 type LocalStorage struct {
 	Config           persist.Config
 	ElasticProcess   *exec.Cmd
+	LuigiProcess     *exec.Cmd
+	LuigiTaskInsert  chan TaskInsert
+	LuigiTaskStatus  chan TaskStatus
 	FormatCollection *formatadaptor.FileFormatCollection
 }
 
@@ -155,6 +177,7 @@ func (store *LocalStorage) Init(config persist.Config) (err error) {
 	elastic_args := []string{
 		"-f",
 		fmt.Sprintf("-Des.path.data=\"%s\"", store.absoluteStoragePath(ELASTIC_DIRECTORY)),
+		fmt.Sprintf("-Des.network.host=\"%s\"", "127.0.0.1"),
 //		fmt.Sprintf("-Des.http.port=%d", elastic_port),
 	}
 //	api.Port = fmt.Sprintf("%d",elastic_port)
@@ -212,7 +235,81 @@ func (store *LocalStorage) Init(config persist.Config) (err error) {
 			return
 		}
 	}
+	
+	// spin Luigi and luigi task watcher
+	err = store.StartLuigi()
+	if err != nil {
+		return
+	}
 	return 
+}
+
+func (store *LocalStorage) StartLuigi() (err error) {
+	store.LuigiTaskInsert = make(chan TaskInsert)
+	store.LuigiTaskStatus = make(chan TaskStatus)
+	return
+}
+
+func luigiKill(tasks map[string]TaskInsert) {
+
+}
+
+func luigiTaskWatcher(taskInsert chan TaskInsert, taskStatus chan TaskStatus) {
+	logtag := "LuigiWatcher"
+	tasks := make(map[string]TaskInsert)
+	taskStatuses := make(map[string]string)
+	defer func() {
+		for _,task := range tasks {
+			task.Task.Process.Kill()
+		}
+	}()
+	for {
+		select {
+		case insert, ok := <-taskInsert:
+			if !ok {
+				return
+			}
+			if task, ok := tasks[insert.TaskId]; ok {
+				logger.LogInfo(logtag,"Killing task %s:%s and replacing it with new task %s:%s", task.TaskName, task.TaskId, insert.TaskName, insert.TaskId)
+				task.Task.Process.Kill()
+				tasks[insert.TaskId] = insert
+			} else {
+				logger.LogInfo(logtag,"Adding task %s:%s", insert.TaskName, insert.TaskId)
+				tasks[insert.TaskId] = insert
+			}
+		case status, ok := <-taskStatus:
+			if !ok {
+				return
+			}
+			tsm := TaskStatusMsg{
+				TaskId: status.TaskId,
+				TaskName: status.TaskName,
+			}
+			if ts, ok := taskStatuses[status.TaskId]; ok {
+				if len(ts) > 0 {
+					tsm.Finished = true
+					tsm.Error = ts
+				}
+			} else {
+				tsm.Finished = false
+			}
+		default:
+			for taskid, task := range tasks {
+				ps := task.Task.ProcessState
+				if ps != nil {
+					if ps.Exited() {
+						logger.LogDebug(logtag, "Task %s:%s finished", task.TaskName, task.TaskId)
+						err := ""
+						if !ps.Success() {
+							err = fmt.Sprintf("Task %s:%s failed and returned with process state: %s", task.TaskName, task.TaskId, ps)
+						}
+						taskStatuses[taskid] = err
+						delete(tasks,taskid)
+					}
+				}
+			}
+		}
+	}
 }
 
 func (store *LocalStorage) Close() (err error) {
@@ -240,30 +337,52 @@ func (store *LocalStorage) IsDone(transformId string) bool {
 	return false
 }
 
-func (store *LocalStorage) Run(transformId string) (err error) {
-	fullDirectoryPath := store.getKeyPath(transformId)
-	err = os.MkdirAll(fullDirectoryPath, 0666)
+func (store *LocalStorage) Run(itransformId string) (err error) {
+	itransform, err := elastic.GetInducedTransform(itransformId)
+	if err != nil {
+		return
+	}
+
+	protoml_folder, err := utils.ProtoMLDir()
 	if err != nil {
 		return err
 	}
-	/*
-		TODO fill in:
-			1. check if train or test
-			if train:
-				2. fill in model like normal
-				3. fill in args
-				4. run
-				5. create new data jsons/db entries with appropriate definitions
-			if test:
-				2. fill in model from train namespace
-				3. fill in args
-				4. set test flag
-				5. run
-				6. create new data jsons/db entries with appropriate definitions
-	*/
-	command := exec.Command("name", "arg", "arg...")
-	err = command.Run()
-	// TODO change written files to read only
+
+	runDir := store.getKeyPath(InducedTransformKey(itransformId))
+	err = osutils.TouchDir(runDir)
+	if err != nil {
+		return err
+	}
+	
+	// Put the JSON of the induced transform and log into the given run folder
+	params, err := json.Marshal(itransform)
+	if err != nil {
+		return err
+	}
+	params_path := path.Join(runDir, TASK_PARARMS_FILE)
+	params_file, err := osutils.TouchFile(params_path)
+	defer params_file.Close()
+	if err != nil {
+		return err
+	}
+	_, err = params_file.Write(params)
+	if err != nil {
+		return err
+	}
+	log_path := path.Join(runDir, TASK_LOG_FILE)
+	log_file, err := osutils.TouchFile(log_path)
+	defer log_file.Close()
+	if err != nil {
+		return err
+	}
+
+	// Execute the Luigi Task
+	// Get the path of the Luigi task
+	luigi_path := path.Join(protoml_folder, LUIGI_TASK)
+	task := exec.Command(luigi_path, "--directory", runDir, "--run_context", itransform.Exec, "--params_file", params_path)
+	task.Stdout = log_file
+	task.Stderr = log_file
+	task.Start()
 	return
 }
 
@@ -280,7 +399,7 @@ func (store *LocalStorage) GetTransformLogFile(transformId string) (paths string
 }
 
 // add induced transform
-func AddInducedTransform(itransform types.InducedTransform) (itransformID string, err error) {
+func (store *LocalStorage) AddInducedTransform(itransform types.InducedTransform) (itransformID string, err error) {
 	logger.LogDebug(LOGTAG, "Adding Induced Transform named (%s) from transform id (%s)", itransform.Name, itransform.TemplateID)
 	// Get transform template
 	// parse and validate induced transform
@@ -297,6 +416,27 @@ func AddInducedTransform(itransform types.InducedTransform) (itransformID string
 		return
 	}
 	logger.LogDebug(LOGTAG, "Result Induced Transform ID: %s", itransformID)	
+	return
+}
+
+// update induced transform
+func (store *LocalStorage) UpdateInducedTransform(itransformId string, itransform types.InducedTransform) (err error) {
+	logger.LogDebug(LOGTAG, "Updating Induced Transform named (%s) from transform id (%s)", itransform.Name, itransform.TemplateID)
+	// Get transform template
+	// parse and validate induced transform
+	err = persistparsers.ValidateInducedTransform(itransform)
+	if err != nil {
+		itransform.Error = fmt.Sprintf("%s",err)
+	} else {
+		itransform.Error = ""
+	}
+
+	// add induced transform into elastic search
+	err = elastic.UpdateInducedTransform(itransformId, itransform)
+	if err != nil {
+		return
+	}
+	logger.LogDebug(LOGTAG, "Result Updated Induced Transform ID: %s", itransformId)	
 	return
 }
 	

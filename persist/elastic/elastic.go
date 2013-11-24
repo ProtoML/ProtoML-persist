@@ -164,6 +164,11 @@ func AddInducedTransform(itransform types.InducedTransform) (id string, err erro
 	return ElasticAdd(INDUCED_TRANSFORM_TYPE, itransform)
 }
 
+func UpdateInducedTransform(itransformId string, itransform types.InducedTransform) (err error) {
+	logger.LogDebug(LOGTAG,"Updating Induced Transform %s from file %s", itransform.Name, itransform.Template)
+	return ElasticUpdate(INDUCED_TRANSFORM_TYPE, itransformId, itransform)
+}
+
 func GetInducedTransform(id string) (itransform types.InducedTransform, err error) {
 	// search 
 	res, err := core.Get(true, PROTOML_INDEX, TRANSFORM_TYPE, id)
