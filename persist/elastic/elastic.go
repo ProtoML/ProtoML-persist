@@ -149,6 +149,25 @@ func AddDataGroup(datagroup types.DataGroup) (id string, err error) {
 	return ElasticAdd(DATAGROUP_TYPE, datagroup)
 }
 
+func GetDataGroup(id string) (datagroup types.DataGroup, err error) {
+	// search 
+	res, err := core.Get(true, PROTOML_INDEX, DATAGROUP_TYPE, id)
+	if err != nil {
+		return
+	}
+	if !res.Ok {
+		err = errors.New(fmt.Sprintf("elastic get failed on datagroup id %s",id))
+		return
+	}
+	if !res.Found {
+		err = errors.New(fmt.Sprintf("Can't find datagroup id %s",id))
+		return
+	}
+
+	datagroup = res.Source.(types.DataGroup)
+	return	
+}
+
 func UpdateDataGroup(eid string, datagroup types.DataGroup) (err error) {
 	logger.LogDebug(LOGTAG,"Updating DataGroup of type %s with shape %d cols and %d rows", datagroup.Columns.ExclusiveType, datagroup.NCols, datagroup.NRows)
 	// validate column type exists

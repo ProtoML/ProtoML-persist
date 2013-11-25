@@ -18,6 +18,7 @@ import (
 	"github.com/ProtoML/ProtoML-persist/persist/elastic"
 	"github.com/ProtoML/ProtoML/utils"
 	"encoding/json"
+	"strings"
 )
 
 const (
@@ -247,11 +248,18 @@ func (store *LocalStorage) Init(config persist.Config) (err error) {
 func (store *LocalStorage) StartLuigi() (err error) {
 	store.LuigiTaskInsert = make(chan TaskInsert)
 	store.LuigiTaskStatus = make(chan TaskStatus)
+	
+	// start ElasticSearch
+	logger.LogInfo(LOGTAG, "Launching Luigi")
+	luigi_cmd := "luigid"
+	luigi_args := []string{}
+	logger.LogDebug(LOGTAG, "Luigi command: %s %v", luigi_cmd, luigi_args)
+	store.LuigiProcess = exec.Command(luigi_cmd, luigi_args...)
+	err = store.LuigiProcess.Start()
+	if err != nil {
+		return
+	}
 	return
-}
-
-func luigiKill(tasks map[string]TaskInsert) {
-
 }
 
 func luigiTaskWatcher(taskInsert chan TaskInsert, taskStatus chan TaskStatus) {
@@ -318,30 +326,84 @@ func (store *LocalStorage) Close() (err error) {
 		err = store.ElasticProcess.Process.Signal(os.Interrupt)
 		err = store.ElasticProcess.Wait()
 	}
+	if store.LuigiProcess != nil {
+		err = store.LuigiProcess.Process.Signal(os.Interrupt)
+		err = store.LuigiProcess.Wait()
+	}
 	return
 }
 
-func (store *LocalStorage) IsDone(transformId string) bool {
-	/*	directory := store.fullDirectoryPath(transformId)
-			files, err := listFiles(directory)
-			if err != nil {
-				return false
+func (store *LocalStorage) IsDone(itransformId string) (bool, error) {
+	itransform, err := elastic.GetInducedTransform(itransformId)
+	if err != nil {
+		return false, err
+	}
+	mchan := make(chan TaskStatusMsg)
+	store.LuigiTaskStatus <- TaskStatus{itransformId, itransform.Name, mchan}
+	tsm, ok := <- mchan
+	if ok {
+		if tsm.Finished {
+			if len(tsm.Error) == 0 {
+				return true, errors.New(tsm.Error)
 			}
-			// search for state name
-		//	transformModel := persist.ModelName(transformId)
-			for _, file := range files {
-		//		if file == transformModel {
-		//			return true
-		//		}
-			}*/
-	return false
+			return true, nil
+		} else {
+			if len(tsm.Error) == 0 {
+				return false, errors.New(tsm.Error)
+			}
+			return false, nil
+		}
+	}
+	return false, nil
+}
+
+func (store *LocalStorage) getInducedTransformDependents(itransform types.InducedTransform) (ids []string, err error) {
+	ids = make([]string,0)
+	sources := make([]string,0)
+	if itransform.InputStatesIDs != nil {
+		for _, dgs := range itransform.InputsIDs {
+			if dgs != nil {
+				for _, dg := range dgs {
+					data, err := elastic.GetDataGroup(string(dg.Id))
+					if err != nil {
+						return ids, err
+					}
+					sources = append(sources, data.Source)
+				}
+			}
+		}
+	}
+	
+	for _, source := range sources {
+		if strings.Contains(source, ".") {
+			continue
+		}
+		ids = append(ids, source)
+	}
+	return
 }
 
 func (store *LocalStorage) Run(itransformId string) (err error) {
+	done, err := store.IsDone(itransformId)
+	if err != nil {
+		return
+	}
+	if done {
+		return
+	}
+	
 	itransform, err := elastic.GetInducedTransform(itransformId)
 	if err != nil {
 		return
 	}
+	sourceIds, err := store.getInducedTransformDependents(itransform)
+	if err != nil {
+		return
+	}
+	//for _, sourceId := range sourceIds {
+	//	err := 
+	//}
+	//finish
 
 	protoml_folder, err := utils.ProtoMLDir()
 	if err != nil {
@@ -361,7 +423,6 @@ func (store *LocalStorage) Run(itransformId string) (err error) {
 	}
 	params_path := path.Join(runDir, TASK_PARARMS_FILE)
 	params_file, err := osutils.TouchFile(params_path)
-	defer params_file.Close()
 	if err != nil {
 		return err
 	}
@@ -369,12 +430,13 @@ func (store *LocalStorage) Run(itransformId string) (err error) {
 	if err != nil {
 		return err
 	}
+	params_file.Close()
 	log_path := path.Join(runDir, TASK_LOG_FILE)
 	log_file, err := osutils.TouchFile(log_path)
-	defer log_file.Close()
 	if err != nil {
 		return err
 	}
+	//defer log_file.Close()
 
 	// Execute the Luigi Task
 	// Get the path of the Luigi task
@@ -383,6 +445,8 @@ func (store *LocalStorage) Run(itransformId string) (err error) {
 	task.Stdout = log_file
 	task.Stderr = log_file
 	task.Start()
+	
+	store.LuigiTaskInsert <- TaskInsert{itransformId, itransform.Name, task}
 	return
 }
 

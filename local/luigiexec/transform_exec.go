@@ -23,11 +23,11 @@ func ExecTransforms (transforms []types.InducedTransform, directories []string) 
 		return
 	}
 
-	tasks := make([]exec.Cmd, len(transforms))
+	tasks := make([]*exec.Cmd, len(transforms))
 	for i, transform := range transforms {
 		// For each InducedTransform, write it as JSON, then pass it to the Luigi task.
 		// utils gives us the ProtoML directory 
-		fprotoml_folder, err := utils.ProtoMLDir()
+		protoml_folder, err := utils.ProtoMLDir()
 		if err != nil {
 			return err
 		}
