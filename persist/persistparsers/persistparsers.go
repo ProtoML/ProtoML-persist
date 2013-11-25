@@ -127,7 +127,7 @@ func ParseInducedTransform(templateJSON []byte) (itransform types.InducedTransfo
 
 func ValidateInducedTransform(indt types.InducedTransform) (err error) {
 	// First, get the template transform from elastic
-	against, err := elastic.GetTransform(indt.TemplateID)
+	against, err := elastic.GetTransform(string(indt.TemplateID))
 	if err != nil {
 		err = errors.New(fmt.Sprintf("Invalid TemplateID %s", indt.TemplateID))
 		return

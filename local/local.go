@@ -79,7 +79,7 @@ type TaskInsert struct {
 	TaskName string
 	Task *exec.Cmd
 }
-
+ 
 type TaskStatus struct {
 	TaskId string
 	TaskName string
@@ -315,7 +315,7 @@ func luigiTaskWatcher(taskInsert chan TaskInsert, taskStatus chan TaskStatus) {
 func (store *LocalStorage) Close() (err error) {
 	logger.LogInfo(LOGTAG,"Closing persistance")
 	if store.ElasticProcess != nil {
-		err = store.ElasticProcess.Process.Kill()
+		err = store.ElasticProcess.Process.Signal(os.Interrupt)
 		err = store.ElasticProcess.Wait()
 	}
 	return
@@ -397,6 +397,119 @@ func (store *LocalStorage) GetTransformLogFile(transformId string) (paths string
 
 	return
 }
+
+// get graph id vertices and id edges
+func (store *LocalStorage) GetGraph() (graph types.ProtoMLGraph, err error) {
+	graph.Vertices = make([]types.ProtoMLVertex,0)
+	graph.Edges = make([]types.ProtoMLEdge,0)
+	dataIds, err := elastic.ElasticGetAll(elastic.DATAGROUP_TYPE)
+	if err != nil {
+		return
+	}
+	dataSet := make(map[types.ElasticID]bool)
+	for _, id := range dataIds {
+		dataSet[types.ElasticID(id)] = true
+	}
+	itransformIds, err := elastic.ElasticGetAll(elastic.INDUCED_TRANSFORM_TYPE)
+	if err != nil {
+		return
+	}
+	itransformSet := make(map[types.ElasticID]bool)
+	for _, id := range itransformIds {
+		itransformSet[types.ElasticID(id)] = true
+	}
+	stateIds, err := elastic.ElasticGetAll(elastic.STATE_TYPE)
+	if err != nil {
+		return
+	}
+	stateSet := make(map[types.ElasticID]bool)
+	for _, id := range stateIds {
+		stateSet[types.ElasticID(id)] = true
+	}
+
+	// add data, transform, state
+	for dataId, _ := range dataSet {
+		graph.Vertices = append(graph.Vertices, types.NewProtoMLVertex(elastic.DATAGROUP_TYPE, dataId))
+	}	
+	for itransformId, _ := range itransformSet {
+	 	graph.Vertices = append(graph.Vertices, types.NewProtoMLVertex(elastic.INDUCED_TRANSFORM_TYPE, itransformId))
+	}
+
+	for stateId, _ := range stateSet {
+		graph.Vertices = append(graph.Vertices, types.NewProtoMLVertex(elastic.STATE_TYPE, stateId))
+	}
+
+	for id, _ := range itransformSet {
+		itransform, err := elastic.GetInducedTransform(string(id))
+		if err != nil {
+			return graph, err
+		}
+		if itransform.InputsIDs != nil {
+			// add input -> transform edges
+			for _, dgs := range itransform.InputsIDs {
+				if dgs != nil {
+					for _, dg := range dgs {
+						if _, ok := dataSet[dg.Id]; !ok {
+							err = errors.New(fmt.Sprintf("Transform %s takes in datagroup that does not exist, its id is %s", dg.Id))
+							return graph, err
+						} else {
+							edge := types.NewProtoMLEdge(elastic.DATAGROUP_TYPE, dg.Id, elastic.INDUCED_TRANSFORM_TYPE, id)
+							graph.Edges = append(graph.Edges, edge)
+						}						
+					}
+				}
+			}
+		}
+		if itransform.OutputsIDs != nil {
+			// add transform -> output
+			for _, dgs := range itransform.OutputsIDs {
+				if dgs != nil {
+					for _, oid := range dgs {
+						if _, ok := dataSet[oid]; !ok {
+							err = errors.New(fmt.Sprintf("Transform %s outputs datagroup that does not exist its id is %s", oid))
+							return graph, err
+						} else {
+							edge := types.NewProtoMLEdge(elastic.INDUCED_TRANSFORM_TYPE, id, elastic.DATAGROUP_TYPE, oid)
+							graph.Edges = append(graph.Edges, edge)
+						}
+					}
+				}
+			}
+		}
+		
+		if itransform.InputStatesIDs != nil {
+			// add state -> transform input
+			for _, sid := range itransform.InputStatesIDs {
+				if _, ok := stateSet[sid]; !ok {
+					err = errors.New(fmt.Sprintf("Transform %s takes in a state that does not exist its id is %s", sid))
+					return graph, err
+					
+				} else {
+					edge := types.NewProtoMLEdge(elastic.STATE_TYPE, sid, elastic.INDUCED_TRANSFORM_TYPE, id)
+					graph.Edges = append(graph.Edges, edge)
+				}
+			}
+		}
+		if itransform.OutputStatesIDs != nil {
+			// add state -> transform input
+			for _, sid := range itransform.OutputStatesIDs {
+				if _, ok := stateSet[sid]; !ok {
+					err = errors.New(fmt.Sprintf("Transform %s takes in a state that does not exist its id is %s", sid))
+					return graph, err
+					
+				} else {
+					
+					edge := types.NewProtoMLEdge(elastic.INDUCED_TRANSFORM_TYPE, id, elastic.STATE_TYPE, sid)
+					graph.Edges = append(graph.Edges, edge)
+				}
+			}
+		}
+	}
+
+	return
+}
+
+
 
 // add induced transform
 func (store *LocalStorage) AddInducedTransform(itransform types.InducedTransform) (itransformID string, err error) {

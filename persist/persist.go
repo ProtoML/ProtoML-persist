@@ -39,12 +39,15 @@ type PersistStorage interface {
 	// get log file for transform
 	//GetTransformLogFile(transformId string) (string, error)
 
+	// get graph id vertices and id edges
+	GetGraph() (types.ProtoMLGraph, error)
+
 	// add induced transform
 	AddInducedTransform(itransform types.InducedTransform) (itransformID string, err error)
 	// update induced transform
-	UpdateInducedTransform(transformId string, itransform types.InducedTransform) (err error)
+	UpdateInducedTransform(itransformId string, itransform types.InducedTransform) (err error)
 	// delete induced transform
-	//RemoveGraphTransform(transformId string) (err error)
+	//DeleteInducedTransform(itransformId string) (err error)
 
 	// insert data on a tranform from a file
 	AddTransformFile(transformFile string) (transform types.Transform, transformID string, err error)

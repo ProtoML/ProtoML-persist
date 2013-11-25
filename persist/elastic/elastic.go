@@ -26,17 +26,17 @@ func ElasticSearchError(res core.SearchResult, errormsg string) (err error) {
 		err = errors.New(fmt.Sprintf("elasticsearch Get for %s timed out",errormsg))
 		return
 	}
-	if res.Hits.Total == 0 {
-		err = errors.New(fmt.Sprintf("elasticsearch Get for %s returned no results",errormsg))
-		return
-	}
+	// if res.Hits.Total == 0 {
+	// 	err = errors.New(fmt.Sprintf("elasticsearch Get for %s returned no results",errormsg))
+	// 	return
+	// }
 	return nil
 }
 
 
 func ElasticIndex(elastictype string, data interface{}, eid string) (id string, err error) {
-	// index
-	resp, err := core.Index(true, PROTOML_INDEX, elastictype, eid, data)
+	// index 
+	resp, err := core.IndexWithParameters(true, PROTOML_INDEX, elastictype, eid, "", 0, "create", "", "", 0, "", "", false, data) 
 	if err != nil {
 		return
 	}
@@ -55,6 +55,30 @@ func ElasticAdd(elastictype string, data interface{}) (id string, err error) {
 func ElasticUpdate(elastictype string, elasticid string, data interface{}) (err error) { 
 	_, err = ElasticIndex(elastictype, data, elasticid)
 	return
+}
+
+func ElasticDelete(elastictype string, elasticid string) (err error) { 
+	_, err = core.Delete(true, PROTOML_INDEX, elastictype, elasticid, 0, "")
+	return
+}
+
+func ElasticGetAll(elastictype string) (ids []string, err error) {
+	// search 
+	res, err := core.SearchRequest(true, PROTOML_INDEX, elastictype, "", "", 0)
+	if err != nil {
+		return
+	}
+	err = ElasticSearchError(res, fmt.Sprintf("%s ", elastictype))
+	if err != nil {
+		return
+	}
+
+	hits := res.Hits.Hits
+	ids = make([]string,len(hits))
+	for i, hit := range hits {
+		ids[i] = hit.Id
+	}
+	return 
 }
 
 func GetDataType(name types.DataTypeName) (datatype types.DataType, err error) {
@@ -157,6 +181,11 @@ func GetTransform(id string) (transform types.Transform, err error) {
 
 	transform = res.Source.(types.Transform)
 	return
+}
+
+func AddState(state types.State) (id string, err error) {
+	logger.LogDebug(LOGTAG,"Adding State from source %s", state.Source)
+	return ElasticAdd(STATE_TYPE, state)
 }
 
 func AddInducedTransform(itransform types.InducedTransform) (id string, err error) {
