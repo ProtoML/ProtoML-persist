@@ -1,79 +1,80 @@
 package persist
 
 import (
-	"crypto/md5"
-	"encoding/json"
-	"fmt"
 	"github.com/ProtoML/ProtoML/types"
-	"io"
-	"io/ioutil"
-	"os"
+	"github.com/ProtoML/ProtoML/formatadaptor"
+	"github.com/ProtoML/ProtoML-persist/persist/elastic"
+	"strings"
+	"github.com/ProtoML/ProtoML/utils/osutils"
+	"path"
 )
 
-type PersistStorage interface {
-	// Initialize file structure / databases
-	Init(config Config) error
-	// check if transform has been computed
-	IsDone(transformId string) bool
-	// runs the transform
-	Run(types.RunRequest) error
-	// returns the filename of database data for a transform
-	TransformData(transformName string) (string, error)
-	// returns the filename of database data for the graph
-	GraphStructure() (string, error)
-	// returns the filename of database data on available transforms
-	AvailableTransforms() (string, error)
-	// load transform from transform json
-	LoadTransform(transformName string) (types.Transform, error)
-	// find data json and load
-	LoadData(dataId string) (types.Data, error)
+type LocalPersistStorageConfig struct {
+	RootDir string
+	StateDir string
+	ElasticPort  int
+	DatasetDirectory string
+	InputFiles []types.DatasetFile
 }
 
 type Config struct {
-	RootDir        string
 	TrainNamespace string
-	InputFiles     []types.Data
+	ExternalTransformDirectories string
+	LocalPersistStorage LocalPersistStorageConfig
+	FormatCollection *formatadaptor.FileFormatCollection
+}
+  
+type PersistStorage interface {
+	// Initialize file structure / databases
+	Init(config Config) error
+	// Close all resources for storage
+	Close() error
+
+	// check if transform has been computed
+	//IsDone(transformId string) (bool, error)
+	// runs the induced transform
+	Run(itransformId string) error
+	// execute entire pipeline
+	Execute() error
+	// get log file for transform
+	//GetTransformLogFile(transformId string) (string, error)
+
+	// get graph id vertices and id edges
+	GetGraph() (types.ProtoMLGraph, error)
+
+	// add induced transform
+	AddInducedTransform(itransform types.InducedTransform) (itransformID string, err error)
+	// update induced transform
+	UpdateInducedTransform(itransformId string, itransform types.InducedTransform) (err error)
+	// delete induced transform
+	//DeleteInducedTransform(itransformId string) (err error)
+
+	// insert data on a tranform from a file
+	AddTransformFile(transformFile string) (transform types.Transform, transformID string, err error)
+	// insert data file into persist
+	AddDataFile(dataFile types.DatasetFile) (dataID []string, err error)
 }
 
-const (
-	CONFIG_FILE = "ProtoML_config.json"
-)
+func AddDataTypes(datatypes []types.DataType) (err error) {
+	for _, datatype := range datatypes {
+		_, err := elastic.AddDataType(datatype)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-func loadBlob(filename string) (blob []byte, err error) {
-	fileReader, err := os.Open(filename)
+func GetTransformFiles(transformDir string) (transformFiles []string, err error) {
+	dirFiles, err := osutils.ListFilesInDirectory(transformDir)
 	if err != nil {
 		return
 	}
-	blob, err = ioutil.ReadAll(fileReader)
-	fileReader.Close()
-	return
-}
-
-func LoadConfig() (config Config, err error) {
-	jsonBlob, err := loadBlob(CONFIG_FILE)
-	if err != nil {
-		return
+	transformFiles = make([]string, 0)
+	for _, file := range dirFiles {
+		if strings.HasSuffix(file,".json") {
+			transformFiles = append(transformFiles,path.Join(transformDir,file))
+		}
 	}
-	err = json.Unmarshal(jsonBlob, &config)
-	return
-}
-
-func Hash(anything ...interface{}) string {
-	// returns the md5 hash of anything that can be printed as a string
-	h := md5.New()
-	io.WriteString(h, fmt.Sprint(anything...))
-	return fmt.Sprintf("%x", h.Sum(nil))
-}
-
-func TransformId(runRequest types.RunRequest) string {
-	// IMPLEMENTATION NOTE: this depends on the filename of the json, and assumes that the filename will be consistent based on the content of the json
-	return Hash(runRequest)
-}
-
-func DataId(transformId string, index uint) string {
-	return fmt.Sprintf("%s-%d", transformId, index)
-}
-
-func ModelName(transformId string) string {
-	return transformId + ".model"
+	return 
 }
